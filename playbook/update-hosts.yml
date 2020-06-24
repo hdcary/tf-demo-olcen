@@ -1,0 +1,14 @@
+---
+##- hosts: master,worker
+- hosts: tester
+  remote_user: nuser
+  become: true
+  become_user: root
+  tasks:
+  
+  - name: copy host.tpl to remote 
+    copy:
+      src: /home/nuser/ansible/file/hosts.tpl
+      dest: /home/nuser/hosts.tpl
+  - name: copy hostname to hosts
+    shell: cat /home/nuser/hosts.tpl >> /etc/hosts

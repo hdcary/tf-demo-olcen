@@ -1,0 +1,12 @@
+---
+
+ - name: Deploy OLCNE on Azure with 2 master and 2 worker nodes
+   hosts: all
+   become: yes
+   remote_user: nuser 
+   become_user: root
+   roles:
+     - ./roles/prerequisites
+     - ./roles/certificate
+     - ./roles/deployment
+     - ./roles/client

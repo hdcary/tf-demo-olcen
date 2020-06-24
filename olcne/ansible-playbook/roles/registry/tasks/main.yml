@@ -1,0 +1,130 @@
+---
+- name: install olcen yum repo
+  yum:
+    name: oracle-olcne-release-el7
+    state: present
+
+- name: Disable olcne 1.0 repo
+  shell: |
+    yum-config-manager --disable ol7_olcne
+
+- name: Enable ol7_olcne11, ol7_kvm_utils, ol7_addons, ol7_latest and ol7_UEKR5 repos
+  shell: |
+    yum-config-manager --enable ol7_olcne11 ol7_kvm_utils ol7_addons ol7_latest ol7_UEKR5
+- name: Install chronyd service
+  yum:
+    name: chrony
+    state: present
+- name: Enable chronyd Service
+  systemd:
+    name: chronyd
+    state: started
+    enabled: yes
+
+- name: Disable swap, br_netfilter and SELinux
+  shell: |
+    swapoff -a
+    sed -i 's/^.*swap/#&/' /etc/fstab
+    modprobe br_netfilter
+    sh -c 'echo "br_netfilter" > /etc/modules-load.d/br_netfilter.conf'
+    sed -i 's/^SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
+    /sbin/setenforce 0
+
+- name: enable docker repo ol7_addons
+  shell: |
+    yum-config-manager --enable ol7_addons
+  when: inventory_hostname in groups['operator']
+
+- name: Install docker-engine packages
+  yum:
+    name: docker-engine,docker-cli
+    state: present 
+  when: inventory_hostname in groups['operator']
+
+- name: create proxy directory
+  file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+    mode: '0755'
+  when: inventory_hostname in groups['operator']
+
+
+- name: Configuring docker proxy Server
+  copy:
+    src: /home/nuser/ansible/olcne/ansible-playbook/roles/registry/tasks/http-proxy.conf
+    dest: /etc/systemd/system/docker.service.d/http-proxy.conf 
+  when: inventory_hostname in groups['operator']
+
+- name: force systemd to reread configs 
+  systemd:
+    daemon_reload: yes
+  when: inventory_hostname in groups['operator']
+
+- name: Eanble and Start docker service
+  systemd:
+    name: docker
+    enabled: yes
+    state: started
+  when: inventory_hostname in groups['operator']
+
+- name: Create registry Directory
+  file:
+    path: /var/lib/registry/conf.d
+    state: directory
+    mode: '0755'
+  when: inventory_hostname in groups['operator']
+
+- name: Create registry CERT
+  shell: |
+    openssl req -new -x509 -days 365 -nodes -newkey rsa:2048 -keyout /var/lib/registry/conf.d/olcne-operator.test.cxm.key -out /var/lib/registry/conf.d/olcne-operator.test.cxm.crt -subj '/C=CN/ST=SH/L=Shanghai/CN=olcne-operator.test.cxm'
+    chmod 600 /var/lib/registry/conf.d/olcne-operator.test.cxm.key
+  when: inventory_hostname in groups['operator']
+
+
+- name: login container-registry.oracle.com
+  shell: |
+    docker logout container-registry.oracle.com
+    docker login -u "{{ username }}" -p "{{ password }}"  container-registry.oracle.com
+  when: inventory_hostname in groups['operator']    
+
+
+- name: Create Registry
+  shell: |
+    docker run -d -p 5000:5000 --name registry --restart=always -v /var/lib/registry:/registry_data \
+    -e REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/registry_data \
+    -e REGISTRY_HTTP_TLS_KEY=/registry_data/conf.d/olcne-operator.test.cxm.key \
+    -e REGISTRY_HTTP_TLS_CERTIFICATE=/registry_data/conf.d/olcne-operator.test.cxm.crt \
+    -e REGISTRY_AUTH="" \
+    container-registry.oracle.com/os/registry:latest
+  when: inventory_hostname in groups['operator']
+
+
+- name: open registry firewalld
+  shell: |
+    firewall-cmd --zone=public --permanent --add-port=5000/tcp
+    firewall-cmd --reload
+  when: inventory_hostname in groups['operator']
+  
+- name: Distributing X.509 Certificates to all nodes
+  shell: |
+    mkdir -p /etc/docker/certs.d/olcne-operator.test.cxm:5000
+
+    
+- name: Copy cert to all nodes
+  copy:
+    src: /var/lib/registry/conf.d/olcne-operator.test.cxm.crt
+    dest: /etc/docker/certs.d/olcne-operator.test.cxm:5000/ca.crt
+
+  
+
+- name: Install olcne-utils packages
+  yum:
+    name: olcne-utils,podman
+    state: present
+  when: inventory_hostname in groups['operator']
+
+- name: 
+  shell: |
+#    sed -i 's/podman/docker/' /bin/registry-image-helper.sh
+    registry-image-helper.sh --to olcne-operator.test.cxm:5000/olcne
+  when: inventory_hostname  in groups['operator']

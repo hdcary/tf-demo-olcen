@@ -1,0 +1,51 @@
+---
+### Operator setup
+- name: setup operator node
+  yum:
+    name: olcnectl,olcne-api-server,olcne-utils
+    state: present
+  when: inventory_hostname in groups['operator']
+
+- name: enable olcne-api-server service
+  systemd:
+    name: olcne-api-server.service
+    state: started
+    enabled: yes
+  when: inventory_hostname in groups['operator']
+
+### kubernetes nodes setup
+- name: setup kubernetes nodes
+  yum:
+    name: olcne-agent,olcne-utils
+    state: present
+  when: inventory_hostname not in groups['operator']
+
+- name: enable olcne-agent, not yet start it now
+  systemd:
+    name: olcne-agent.service
+    enabled: yes
+  when: inventory_hostname not in groups['operator']
+
+- name: disable docker.service
+  systemd:
+    name: docker.service
+    enabled: no
+    state: stopped
+  when: inventory_hostname not in groups['operator']
+
+- name: disable containerd.service
+  systemd:
+    name: containerd.service
+    enabled: no
+    state: stopped
+  when: inventory_hostname not in groups['operator']
+
+## Setup Load Balancer
+- name: Open LB port
+  shell: |
+    firewall-cmd --zone=public --permanent --add-port=6444/tcp
+    firewall-cmd --zone=public --permanent --add-protocol=vrrp
+    firewall-cmd --reload
+  when: inventory_hostname in groups['master']
+
+

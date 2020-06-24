@@ -1,0 +1,16 @@
+---
+- name: Deployment local registry
+  hosts: all
+  become: yes
+  remote_user: nuser
+  become_user: root
+  vars_prompt:
+    - name: username
+      prompt: "what is your login name?"
+      private: no
+
+    - name: password
+      prompt: "what is your password?"
+ 
+  roles:
+    - ./roles/registry

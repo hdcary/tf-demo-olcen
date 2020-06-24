@@ -1,0 +1,12 @@
+---
+ - hosts: all
+   become: true
+   remote_user: nuser
+   gather_facts: no
+   become_user: root
+   
+   tasks:
+   - name: Deploy ssh key
+     authorized_key: user=nuser
+                     key="{{ lookup ('file', '/home/nuser/.ssh/id_rda.pub') }}"
+                     state=present
