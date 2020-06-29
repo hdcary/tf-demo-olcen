@@ -6,7 +6,5 @@
    remote_user: nuser 
    become_user: root
    roles:
-     - ./roles/prerequisites
-     - ./roles/certificate
      - ./roles/deployment
-     - ./roles/client
+     

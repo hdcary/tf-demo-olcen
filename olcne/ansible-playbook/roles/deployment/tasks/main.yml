@@ -1,30 +1,117 @@
 ---
-### Operator setup
-- name: setup operator node
+
+
+- name: Configure firewalld on operator
+  shell: |
+    firewall-cmd --zone=public --permanent --add-port=8091/tcp
+    firewall-cmd --add-masquerade --permanent
+    firewall-cmd --reload
+  when: inventory_hostname in groups['operator']
+
+### these lines for multi-master firewall 
+- name: Configure firewalld on masters
+  shell: |
+    firewall-cmd --zone=public --permanent --add-port=10251/tcp
+    firewall-cmd --zone=public --permanent --add-port=10252/tcp
+    firewall-cmd --zone=public --permanent --add-port=2379/tcp
+    firewall-cmd --zone=public --permanent --add-port=2380/tcp
+    firewall-cmd --zone=trusted --add-interface=cni0 --permanent
+    firewall-cmd --zone=public --permanent --add-port=8090/tcp
+    firewall-cmd --zone=public --permanent --add-port=10250/tcp
+    firewall-cmd --zone=public --permanent --add-port=10255/tcp
+    firewall-cmd --zone=public --permanent --add-port=8472/udp
+    firewall-cmd --zone=public --permanent --add-port=6443/tcp
+      
+    firewall-cmd --reload
+  when: inventory_hostname in groups['master']
+
+- name: Configure firewalld on workers node
+  shell: |
+    firewall-cmd --zone=trusted --add-interface=cni0 --permanent
+    firewall-cmd --zone=public --permanent --add-port=8090/tcp
+    firewall-cmd --zone=public --permanent --add-port=10250/tcp
+    firewall-cmd --zone=public --permanent --add-port=10255/tcp
+    firewall-cmd --zone=public --permanent --add-port=8472/udp
+
+    firewall-cmd --reload
+  when: inventory_hostname in groups['worker']
+
+
+### Operator pre-setup
+- name: pre-setup operator node
   yum:
-    name: olcnectl,olcne-api-server,olcne-utils
+    name: olcnectl,olcne-api-server,olcne-utils,bash-completion
     state: present
   when: inventory_hostname in groups['operator']
 
 - name: enable olcne-api-server service
   systemd:
     name: olcne-api-server.service
-    state: started
+###    state: started
     enabled: yes
   when: inventory_hostname in groups['operator']
 
-### kubernetes nodes setup
-- name: setup kubernetes nodes
+### Master pre-setup
+- name: pre-setup master node
   yum:
-    name: olcne-agent,olcne-utils
+    name: olcne-agent,olcne-utils,bash-completion,kubeadm,kubelet,kubectl,olcne-nginx,keepalived
     state: present
-  when: inventory_hostname not in groups['operator']
+  when: inventory_hostname in groups['master']
+
+# - name: Bridge Tunable Parameters on masters 
+#   shell: |
+#     sh -c 'echo "" > /etc/sysctl.d/k8s.conf'
+#     sh -c 'echo "net.bridge.bridge-nf-call-ip6tables = 1" >> /etc/sysctl.d/k8s.conf'
+#     sh -c 'echo "net.bridge.bridge-nf-call-iptables = 1" >> /etc/sysctl.d/k8s.conf'
+#     sh -c 'echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.d/k8s.conf'
+#     /sbin/sysctl -p /etc/sysctl.conf 
+#   when: inventory_hostname in groups['master']
+
+- name: enable kubectl-proxy service 
+  systemd:
+    name: kubectl-proxy.service
+###    state: started
+    enabled: yes
+  when: inventory_hostname in groups['master']
+- name: enable olcne-agent service 
+  systemd:
+    name: olcne-agent.service
+###    state: started
+    enabled: yes
+  when: inventory_hostname in groups['master']
+- name: enable olcne-nginx service 
+  systemd:
+    name: olcne-nginx.service
+###    state: started
+    enabled: yes
+  when: inventory_hostname in groups['master']  
+- name: enable keepalived service 
+  systemd:
+    name: keepalived.service
+###    state: started
+    enabled: yes
+  when: inventory_hostname in groups['master']
+
+### worker pre-setup
+- name: pre-install package on workers
+  yum:
+    name: olcne-agent,olcne-utils,kubeadm,kubelet,kubectl
+    state: present
+  when: inventory_hostname not in groups['worker']
+# - name: Bridge Tunable Parameters on workers 
+#   shell: |
+#     sh -c 'echo "" > /etc/sysctl.d/k8s.conf'
+#     sh -c 'echo "net.bridge.bridge-nf-call-ip6tables = 1" >> /etc/sysctl.d/k8s.conf'
+#     sh -c 'echo "net.bridge.bridge-nf-call-iptables = 1" >> /etc/sysctl.d/k8s.conf'
+#     sh -c 'echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.d/k8s.conf'
+#     /sbin/sysctl -p /etc/sysctl.conf 
+#   when: inventory_hostname in groups['worker']
 
 - name: enable olcne-agent, not yet start it now
   systemd:
     name: olcne-agent.service
     enabled: yes
-  when: inventory_hostname not in groups['operator']
+  when: inventory_hostname not in groups['worker']
 
 - name: disable docker.service
   systemd:
@@ -48,4 +135,109 @@
     firewall-cmd --reload
   when: inventory_hostname in groups['master']
 
+## Generate X509 Certification
+- name:  Generate X509 Certification
+  shell: |
+    /etc/olcne/gen-certs-helper.sh \
+    --cert-request-organization-unit "test.cxm" --cert-request-organization "test.cxm" --cert-request-locality "SH" \
+    --cert-request-state "SH" --cert-request-country "CN" --cert-request-common-name "olcne-operator.test.cxm" \
+    --nodes olcne-operator.test.cxm,olcne-master1.test.cxm,olcne-master2.test.cxm,olcne-wk1.test.cxm,olcne-wk2.test.cxm \
+    --cert-dir /etc/olcne/pki
+  when: inventory_hostname in groups['operator']
 
+##  transfer Certification
+- name: create directory for cert copy
+  shell: |
+    mkdir -p /etc/olcne/pki/production
+  when: inventory_hostname not in groups['operator']
+- name: copy cert ca.cert
+  copy:
+    src: /etc/olcne/pki/production/ca.cert
+    dest: /etc/olcne/pki/production/ca.cert
+  when: inventory_hostname not in groups['operator']
+- name: copy cert node.key
+  copy:
+    src: /etc/olcne/pki/tmp-olcne/{{ inventory_hostname }}/node.key
+    dest: /etc/olcne/pki/production/node.key
+- name: copy node.cert
+  copy:
+    src: /etc/olcne/pki/tmp-olcne/{{ inventory_hostname }}/node.cert
+    dest: /etc/olcne/pki/production/node.cert
+- name: Give the 'olcne' user access to the certs dir
+  shell: |
+    chown -R olcne:olcne /etc/olcne/pki/production
+    sudo -u olcne ls /etc/olcne/pki/production
+
+## Starting the Services Using Certificates
+- name: Bootstrap the Oracle Linux Cloud Native Environment Platform API Server
+  shell: |
+    /etc/olcne/bootstrap-olcne.sh --secret-manager-type file \
+    --olcne-node-cert-path /etc/olcne/pki/production/node.cert \
+    --olcne-ca-path /etc/olcne/pki/production/ca.cert \
+    --olcne-node-key-path /etc/olcne/pki/production/node.key \
+    --olcne-component api-server
+  when: inventory_hostname in groups['operator']
+- name: Bootstrap the Oracle Linux Cloud Native Environment Platform Agent
+  shell: |
+    /etc/olcne/bootstrap-olcne.sh --secret-manager-type file \
+    --olcne-node-cert-path /etc/olcne/pki/production/node.cert \
+    --olcne-ca-path /etc/olcne/pki/production/ca.cert \
+    --olcne-node-key-path /etc/olcne/pki/production/node.key \
+    --olcne-component agent
+  when: inventory_hostname not in groups['operator']
+
+## Create and Manage K8s cluster
+- name: create and manage a k8s cluster
+  shell: |
+     olcnectl --api-server 127.0.0.1:8091 environment create --environment-name olcne-env \  
+     --update-config \
+     --secret-manager-type file \
+     --olcne-node-cert-path /etc/olcne/pki/production/node.cert \
+     --olcne-ca-path /etc/olcne/pki/production/ca.cert \
+     --olcne-node-key-path /etc/olcne/pki/production/node.key
+  when: inventory_hostname in groups['operator']
+- name: Add K8s to olcne-env Environment
+  shell: |
+    olcnectl --api-server 127.0.0.1:8091 module create --environment-name olcne-env \
+    --module kubernetes --name olcne-cluster \
+    --container-registry olcne-operator.test.cxm:5000/olcne \
+    --nginx-image olcne-operator.test.cxm:5000/olcne/nginx:1.12.2 \
+    --virtual-ip 192.168.31.119 \
+    --master-nodes olcne-master1.test.cxm:8090,olcne-master2.test.cxm:8090 \
+    --worker-nodes olcne-wk1.test.cxm:8090,olcne-wk2.test.cxm:8090
+  when: inventory_hostname in groups['operator']
+- name: modify and update keepalived.conf
+  shell: |
+    sed -i '/192.168.200.16/d' /etc/keepalived/keepalived.conf
+    sed -i '/192.168.200.17/d' /etc/keepalived/keepalived.conf
+    sed -i '/192.168.200.18/d' /etc/keepalived/keepalived.conf
+    sed -i '/virtual_ipaddress/ a \    192.168.31.119' /etc/keepalived/keepalived.conf
+  when: inventory_hostname in groups['master']
+- name: enable keepalived service 
+  systemd:
+    name: keepalived.service
+    state: started
+  when: inventory_hostname in groups['master']
+
+- name: 
+  shell: |
+#    sed -i 's/podman/docker/' /bin/registry-image-helper.sh
+    sed -i 's/coredns:${COREDNS_VERSION}"/coredns:${COREDNS_VERSION},\/' /bin/registry-image-helper.sh
+    sed -i '/coredns/ a nginx:1.12.2"' /bin/registry-image-helper.sh
+    registry-image-helper.sh --to olcne-operator.test.cxm:5000/olcne
+  when: inventory_hostname  in groups['master']
+
+- name: Deploy K8s Module
+  shell: |
+    olcnectl --api-server 127.0.0.1:8091 module install --environment-name olcne-env --name olcne-cluster
+  when: inventory_hostname in groups['operator']
+
+- name: copy kubernetes user admin.conf
+  shell: |
+    mkdir -p /home/nuser/.kube
+    cp -i /etc/kubernetes/admin.conf /home/nuser/.kube/config
+    chown nuser:nuser -R /home/nuser/.kube/config
+    echo 'export KUBECONFIG=/home/nuser/.kube/config' >> /home/nuser/.bashrc
+    
+
+    

@@ -1,5 +1,9 @@
 ---
-- name: install olcen yum repo
+- name: update yum repositories cache
+  shell: |
+    yum makecache
+
+- name: install olcne yum repo
   yum:
     name: oracle-olcne-release-el7
     state: present
@@ -11,10 +15,12 @@
 - name: Enable ol7_olcne11, ol7_kvm_utils, ol7_addons, ol7_latest and ol7_UEKR5 repos
   shell: |
     yum-config-manager --enable ol7_olcne11 ol7_kvm_utils ol7_addons ol7_latest ol7_UEKR5
+
 - name: Install chronyd service
   yum:
     name: chrony
     state: present
+
 - name: Enable chronyd Service
   systemd:
     name: chronyd
@@ -30,7 +36,7 @@
     sed -i 's/^SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
     /sbin/setenforce 0
 
-- name: enable docker repo ol7_addons
+- name: enable docker repo ol7_addons on operator
   shell: |
     yum-config-manager --enable ol7_addons
   when: inventory_hostname in groups['operator']
@@ -48,14 +54,13 @@
     mode: '0755'
   when: inventory_hostname in groups['operator']
 
-
 - name: Configuring docker proxy Server
   copy:
     src: /home/nuser/ansible/olcne/ansible-playbook/roles/registry/tasks/http-proxy.conf
     dest: /etc/systemd/system/docker.service.d/http-proxy.conf 
   when: inventory_hostname in groups['operator']
 
-- name: force systemd to reread configs 
+- name: force systemd to reload configs 
   systemd:
     daemon_reload: yes
   when: inventory_hostname in groups['operator']
@@ -74,19 +79,17 @@
     mode: '0755'
   when: inventory_hostname in groups['operator']
 
-- name: Create registry CERT
+- name: Create registry X.509 CERTIFICATION/KEY
   shell: |
     openssl req -new -x509 -days 365 -nodes -newkey rsa:2048 -keyout /var/lib/registry/conf.d/olcne-operator.test.cxm.key -out /var/lib/registry/conf.d/olcne-operator.test.cxm.crt -subj '/C=CN/ST=SH/L=Shanghai/CN=olcne-operator.test.cxm'
     chmod 600 /var/lib/registry/conf.d/olcne-operator.test.cxm.key
   when: inventory_hostname in groups['operator']
 
-
-- name: login container-registry.oracle.com
+- name: login Oracle Container Registry 
   shell: |
     docker logout container-registry.oracle.com
     docker login -u "{{ username }}" -p "{{ password }}"  container-registry.oracle.com
   when: inventory_hostname in groups['operator']    
-
 
 - name: Create Registry
   shell: |
@@ -98,8 +101,7 @@
     container-registry.oracle.com/os/registry:latest
   when: inventory_hostname in groups['operator']
 
-
-- name: open registry firewalld
+- name: open registry port 5000
   shell: |
     firewall-cmd --zone=public --permanent --add-port=5000/tcp
     firewall-cmd --reload
@@ -109,15 +111,12 @@
   shell: |
     mkdir -p /etc/docker/certs.d/olcne-operator.test.cxm:5000
 
-    
 - name: Copy cert to all nodes
   copy:
     src: /var/lib/registry/conf.d/olcne-operator.test.cxm.crt
     dest: /etc/docker/certs.d/olcne-operator.test.cxm:5000/ca.crt
 
-  
-
-- name: Install olcne-utils packages
+- name: Install olcne-utils and podman packages for download and push K8S images to registory
   yum:
     name: olcne-utils,podman
     state: present
@@ -126,5 +125,7 @@
 - name: 
   shell: |
 #    sed -i 's/podman/docker/' /bin/registry-image-helper.sh
+    sed -i '/coredns:${COREDNS_VERSION}"/coredns:${COREDNS_VERSION},\' /bin/registry-image-helper.sh
+    sed -i '/coredns/ a nginx:1.12.2"' /bin/registry-image-helper.sh
     registry-image-helper.sh --to olcne-operator.test.cxm:5000/olcne
   when: inventory_hostname  in groups['operator']

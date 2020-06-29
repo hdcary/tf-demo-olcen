@@ -1,0 +1,80 @@
+---
+- hosts: all
+  become: true
+  remote_user: nuser 
+  become_user: root
+  tasks:
+    # - name: create directory for cert copy
+    #   shell: |
+    #     mkdir -p /etc/olcne/pki/production
+    #   when: inventory_hostname not in groups['operator']
+    # - name: test step
+    #   copy:
+    #     src: /etc/olcne/pki/production/ca.cert
+    #     dest: /etc/olcne/pki/production/ca.cert
+    #   when: inventory_hostname not in groups['operator']
+    # - name: test inventory_hostname
+    #   copy:
+    #     src: /etc/olcne/pki/tmp-olcne/{{ inventory_hostname }}/node.key
+    #     dest: /etc/olcne/pki/production/node.key
+    # - name: copy node.cert
+    #   copy:
+    #     src: /etc/olcne/pki/tmp-olcne/{{ inventory_hostname }}/node.cert
+    #     dest: /etc/olcne/pki/production/node.cert
+    # - name: Give the 'olcne' user access to the certs dir
+    #   shell: |
+    #     chown -R olcne:olcne /etc/olcne/pki/production
+    #     sudo -u olcne ls /etc/olcne/pki/production
+    # - name: Bootstrap the Oracle Linux Cloud Native Environment Platform API Server
+    #   shell: |
+    #     /etc/olcne/bootstrap-olcne.sh --secret-manager-type file \
+    #     --olcne-node-cert-path /etc/olcne/pki/production/node.cert \
+    #     --olcne-ca-path /etc/olcne/pki/production/ca.cert \
+    #     --olcne-node-key-path /etc/olcne/pki/production/node.key \
+    #     --olcne-component api-server
+    #   when: inventory_hostname in groups['operator']
+
+    # - name: Bootstrap the Oracle Linux Cloud Native Environment Platform Agent
+    #   shell: |
+    #     /etc/olcne/bootstrap-olcne.sh --secret-manager-type file \
+    #     --olcne-node-cert-path /etc/olcne/pki/production/node.cert \
+    #     --olcne-ca-path /etc/olcne/pki/production/ca.cert \
+    #     --olcne-node-key-path /etc/olcne/pki/production/node.key \
+    #     --olcne-component agent
+    #   when: inventory_hostname not in groups['operator']
+
+    # - name: create and manage a k8s cluster
+    #   shell: |
+    #     olcnectl --api-server 127.0.0.1:8091 environment create --environment-name olcne-env \  
+    #     --update-config \
+    #     --secret-manager-type file \
+    #     --olcne-node-cert-path /etc/olcne/pki/production/node.cert \
+    #     --olcne-ca-path /etc/olcne/pki/production/ca.cert \
+    #     --olcne-node-key-path /etc/olcne/pki/production/node.key
+    #   when: inventory_hostname in groups['operator']
+    # - name: Add K8s to olcne-env Environment
+    #   shell: |
+    #     olcnectl --api-server 127.0.0.1:8091 module create --environment-name olcne-env \
+    #     --module kubernetes --name olcne-cluster \
+    #     --container-registry olcne-operator.test.cxm:5000/olcne \
+    #     --nginx-image olcne-operator.test.cxm:5000/olcne/nginx:1.12.2 \
+    #     --virtual-ip 192.168.31.119 \
+    #     --master-nodes olcne-master1.test.cxm:8090,olcne-master2.test.cxm:8090 \
+    #     --worker-nodes olcne-wk1.test.cxm:8090,olcne-wk2.test.cxm:8090
+    #   when: inventory_hostname in groups['operator']
+    # - name: Enable crio,kuberlet service on workers
+    #   systemd:
+    #     name: docker
+    #   enabled: yes
+    #   state: started
+    # when: inventory_hostname in groups['operator']
+    - name: Deploy K8s Module
+      shell: |
+        olcnectl --api-server 127.0.0.1:8091 module install --environment-name olcne-env --name olcne-cluster
+      when: inventory_hostname in groups['operator']
+    
+
+      
+        
+
+

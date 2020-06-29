@@ -12,9 +12,9 @@
 #  - name: Enable ol7_olcne11, ol7_kvm_utils, ol7_addons, ol7_latest and ol7_UEKR5 repos
 #    shell: |
 #      yum-config-manager --enable ol7_olcne11 ol7_kvm_utils ol7_addons ol7_latest ol7_UEKR5
-- name: update yum repositories cache
-  shell: |
-    yum makecache
+# - name: update yum repositories cache
+#   shell: |
+#     yum makecache
 
 
 #  - name: Install chronyd service
